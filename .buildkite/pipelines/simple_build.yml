@@ -1,0 +1,67 @@
+steps:
+  - label: ":pnpm: install + build"
+    agents: {queue: kubernetes}
+    image: node:24.21.0-bookworm
+    command:
+      - corepack enable
+      - corepack prepare pnpm@12.4.2 --activate
+      - node scripts/kbn bootstrap --allow-root
+      - node scripts/build
+    plugins:
+      - kubernetes:
+          podSpecPatch:
+            initContainers:
+              # Os hooks de plugin rodam no container do comando (node:24.21.0-bookworm),
+              # nao em sidecar. Entao `aws` e `jq` precisam chegar no PATH dele.
+              # A imagem oficial do AWS CLI ja traz os dois — nada e baixado aqui.
+              - name: install-cache-tools
+                image: amazon/aws-cli:2.37.6
+                command: ["/bin/sh", "-c"]
+                args:
+                  - |
+                    set -eu
+                    mkdir -p /workspace/bin /workspace/aws-cli /workspace/lib
+
+                    # --- AWS CLI ---
+                    # `current` e um symlink ABSOLUTO (-> /usr/local/aws-cli/v2/<versao>),
+                    # que nao resolve no container do comando. Copiamos o CONTEUDO do
+                    # diretorio versionado; os symlinks internos sao relativos.
+                    cp -a /usr/local/aws-cli/v2/current/. /workspace/aws-cli/
+                    ln -sf /workspace/aws-cli/bin/aws /workspace/bin/aws
+
+                    # --- jq (exigido pelo plugin para usar restore-keys) ---
+                    # /usr/bin/jq e dinamicamente linkado contra libjq/libonig do AL2023
+                    # (DT_NEEDED: libjq.so.1, libonig.so.5). Levamos as libs junto e
+                    # embrulhamos o binario, para nao exportar LD_LIBRARY_PATH no job.
+                    cp -a /usr/bin/jq /workspace/lib/jq.bin
+                    cp -a /usr/lib64/libjq.so.1* /usr/lib64/libonig.so.5* /workspace/lib/
+                    printf '%s\n' '#!/bin/sh' \
+                      'exec env LD_LIBRARY_PATH=/workspace/lib /workspace/lib/jq.bin "$$@"' \
+                      > /workspace/bin/jq
+                    chmod +x /workspace/bin/jq
+
+                    /workspace/bin/aws --version
+                    /workspace/bin/jq --version
+                volumeMounts:
+                  - name: workspace
+                    mountPath: /workspace
+            containers:
+              - name: container-0
+                env:
+                  - name: PATH
+                    value: "/workspace/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+                  # o node:24.21.0-bookworm nao tem `less`; sem isso o aws v2 erra ao paginar
+                  - name: AWS_PAGER
+                    value: ""
+      - gencer/cache#v2.4.15:
+          id: node-modules
+          backend: s3
+          key: "v1-cache-{{ checksum 'pnpm-lock.yaml' }}"
+          # Prefixos para hit PARCIAL quando o lockfile muda: o plugin lista os
+          # objetos com esse prefixo e baixa o mais recente por LastModified.
+          # Sem isso, qualquer alteracao de dependencia da miss total.
+          restore-keys:
+            - "v1-cache-"
+          paths:
+            - node_modules
+            - .pnpm-store
