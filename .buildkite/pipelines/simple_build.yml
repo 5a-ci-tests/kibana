@@ -7,6 +7,11 @@ steps:
       - corepack prepare pnpm@12.4.2 --activate
       - node scripts/kbn bootstrap --allow-root
       - node scripts/build
+    env:
+      # A infra bloqueia saida para ci-stats e cdn.playwright.dev; nenhum dos
+      # dois e necessario para o build.
+      CI_STATS_DISABLED: "true"
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
     plugins:
       - kubernetes:
           # Clone raso: o historico do Kibana tem varios GB e o build so precisa
@@ -27,18 +32,8 @@ steps:
                   - |
                     set -eu
                     mkdir -p /workspace/bin /workspace/aws-cli /workspace/lib
-
-                    # --- AWS CLI ---
-                    # `current` e um symlink ABSOLUTO (-> /usr/local/aws-cli/v2/<versao>),
-                    # que nao resolve no container do comando. Copiamos o CONTEUDO do
-                    # diretorio versionado; os symlinks internos sao relativos.
                     cp -a /usr/local/aws-cli/v2/current/. /workspace/aws-cli/
                     ln -sf /workspace/aws-cli/bin/aws /workspace/bin/aws
-
-                    # --- jq (exigido pelo plugin para usar restore-keys) ---
-                    # /usr/bin/jq e dinamicamente linkado contra libjq/libonig do AL2023
-                    # (DT_NEEDED: libjq.so.1, libonig.so.5). Levamos as libs junto e
-                    # embrulhamos o binario, para nao exportar LD_LIBRARY_PATH no job.
                     cp -a /usr/bin/jq /workspace/lib/jq.bin
                     cp -a /usr/lib64/libjq.so.1* /usr/lib64/libonig.so.5* /workspace/lib/
                     printf '%s\n' '#!/bin/sh' \

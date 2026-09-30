@@ -132,6 +132,12 @@ export async function pnpmInstallDeps(log, { offline, quiet, frozenLockfile, for
   await run('pnpm', args, { cwd: REPO_ROOT, pipe: !quiet });
   log.success('pnpm dependencies installed');
 
+  // `playwright install` ignores this env var on its own; honor it for environments without CDN access.
+  if (process.env.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD === '1') {
+    log.warning('PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD is set, skipping Playwright browsers install');
+    return;
+  }
+
   await run('pnpm', ['exec', 'playwright', 'install'], {
     cwd: REPO_ROOT,
     pipe: false,
