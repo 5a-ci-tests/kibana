@@ -11,7 +11,9 @@ steps:
       - corepack enable
       - corepack prepare pnpm@12.4.2 --activate
       - node scripts/kbn bootstrap --allow-root
-      - node scripts/build --allow-root
+      # `node scripts/build` baixa Node, pacotes do Fleet e Chromium de dominios
+      # bloqueados; o optimizer compila os bundles sem downloads externos.
+      - node scripts/build_kibana_platform_plugins --dist
     env:
       # A infra bloqueia saida para ci-stats e cdn.playwright.dev; nenhum dos
       # dois e necessario para o build.
