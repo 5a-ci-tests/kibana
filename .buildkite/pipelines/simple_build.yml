@@ -40,6 +40,13 @@ steps:
                   - |
                     set -eu
                     mkdir -p /workspace/bin /workspace/aws-cli /workspace/lib
+
+                    # Mais paralelismo no `aws s3 cp`: o padrao (10 requisicoes, chunks de
+                    # 8MB) subutiliza a banda para um tarball de varios GB.
+                    printf '%s\n' '[default]' 's3 =' \
+                      '  max_concurrent_requests = 64' \
+                      '  multipart_chunksize = 64MB' \
+                      > /workspace/aws-config
                     cp -a /usr/local/aws-cli/v2/current/. /workspace/aws-cli/
                     ln -sf /workspace/aws-cli/bin/aws /workspace/bin/aws
                     cp -a /usr/bin/jq /workspace/lib/jq.bin
@@ -48,6 +55,30 @@ steps:
                       'exec env LD_LIBRARY_PATH=/workspace/lib /workspace/lib/jq.bin "$$@"' \
                       > /workspace/bin/jq
                     chmod +x /workspace/bin/jq
+
+                    # --- zstd (compress-program do plugin de cache) ---
+                    # Nem o node:24.21.0-bookworm nem esta imagem trazem o binario `zstd`, e o
+                    # apt esta bloqueado pela saida. O Node 24 tem zstd nativo no zlib, entao
+                    # geramos um substituto que o tar chama como `zstd` / `zstd -d`.
+                    # Single-thread: o zstd do Node com nbWorkers falha com as escritas pequenas do tar.
+                    cat > /workspace/bin/zstd <<'EOF'
+                    #!/usr/bin/env node
+                    const { createZstdCompress, createZstdDecompress, constants } = require('zlib');
+                    const { pipeline } = require('stream');
+                    const decompress = process.argv.slice(2).includes('-d');
+                    const stream = decompress
+                      ? createZstdDecompress()
+                      : createZstdCompress({
+                          params: { [constants.ZSTD_c_compressionLevel]: Number(process.env.ZSTD_CLEVEL || 3) },
+                        });
+                    pipeline(process.stdin, stream, process.stdout, (err) => {
+                      if (err) {
+                        console.error('zstd: ' + err.message);
+                        process.exit(1);
+                      }
+                    });
+                    EOF
+                    chmod +x /workspace/bin/zstd
 
                     /workspace/bin/aws --version
                     /workspace/bin/jq --version
@@ -65,15 +96,19 @@ steps:
                   # o node:24.21.0-bookworm nao tem `less`; sem isso o aws v2 erra ao paginar
                   - name: AWS_PAGER
                     value: ""
-      - gencer/cache#v2.4.15:
+                  - name: AWS_CONFIG_FILE
+                    value: /workspace/aws-config
+      - nienbo/cache#v2.4.21:
           id: node-modules
           backend: s3
-          key: "v1-cache-{{ checksum 'pnpm-lock.yaml' }}"
-          # Prefixos para hit PARCIAL quando o lockfile muda: o plugin lista os
-          # objetos com esse prefixo e baixa o mais recente por LastModified.
-          # Sem isso, qualquer alteracao de dependencia da miss total.
+          s3:
+            save-cache: false
+          compress: true
+          compress-program: zstd
+          # v2: os tarballs v1 nao sao zstd; um restore-key `v1-` tentaria descomprimi-los.
+          key: "v2-cache-{{ checksum 'pnpm-lock.yaml' }}"
           restore-keys:
-            - "v1-cache-"
+            - "v2-cache-"
           paths:
             - node_modules
             - .pnpm-store
