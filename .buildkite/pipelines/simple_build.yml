@@ -9,6 +9,12 @@ steps:
       - node scripts/build
     plugins:
       - kubernetes:
+          # Clone raso: o historico do Kibana tem varios GB e o build so precisa
+          # do commit atual. O fetch tambem precisa de --depth, senao o agent
+          # aprofunda o clone ao buscar o commit do build.
+          checkout:
+            cloneFlags: --depth=1 --single-branch --no-tags
+            fetchFlags: --depth=1 --no-tags
           podSpecPatch:
             initContainers:
               # Os hooks de plugin rodam no container do comando (node:24.21.0-bookworm),
