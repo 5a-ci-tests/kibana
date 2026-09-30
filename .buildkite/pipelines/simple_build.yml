@@ -3,6 +3,11 @@ steps:
     agents: {queue: kubernetes}
     image: node:24.21.0-bookworm
     command:
+      # Os plugins WASM do moon mapeiam a raiz do workspace para o caminho virtual
+      # `/workspace`. Como o checkout real tambem comeca com `/workspace/`, o moon
+      # confunde caminho real com virtual e nao acha o pnpm-lock.yaml. Rodamos a
+      # partir do mesmo volume montado em `/kbn` para evitar a colisao.
+      - cd "/kbn$${BUILDKITE_BUILD_CHECKOUT_PATH#/workspace}"
       - corepack enable
       - corepack prepare pnpm@12.4.2 --activate
       - node scripts/kbn bootstrap --allow-root
@@ -20,6 +25,7 @@ steps:
           checkout:
             cloneFlags: --depth=1 --single-branch --no-tags
             fetchFlags: --depth=1 --no-tags
+            depth: 1
           podSpecPatch:
             initContainers:
               # Os hooks de plugin rodam no container do comando (node:24.21.0-bookworm),
@@ -48,6 +54,9 @@ steps:
                     mountPath: /workspace
             containers:
               - name: container-0
+                volumeMounts:
+                  - name: workspace
+                    mountPath: /kbn
                 env:
                   - name: PATH
                     value: "/workspace/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
