@@ -11,7 +11,7 @@ steps:
       - corepack enable
       - corepack prepare pnpm@12.4.2 --activate
       - node scripts/kbn bootstrap --allow-root
-      - node scripts/build
+      - node scripts/build --allow-root
     env:
       # A infra bloqueia saida para ci-stats e cdn.playwright.dev; nenhum dos
       # dois e necessario para o build.

@@ -51,6 +51,7 @@ export function readCliArgs(argv: string[]) {
       'with-example-plugins',
       'serverless',
       'tar-zstd',
+      'allow-root',
     ],
     string: ['docker-namespace', 'epr-registry'],
     alias: {

@@ -359,6 +359,8 @@ export async function buildWebpackBundles({
     quiet ? ['--quiet'] : [],
     dist ? ['--dist'] : [],
     noCache ? ['--no-cache'] : [],
+    // forward the root opt-in to the nested kbn command, which enforces the root check
+    process.argv.includes('--allow-root') ? ['--allow-root'] : [],
   ].flat();
   const stdio: StdioOption[] = quiet
     ? ['ignore', 'pipe', 'pipe']
