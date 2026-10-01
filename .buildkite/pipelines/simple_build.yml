@@ -56,30 +56,6 @@ steps:
                       > /workspace/bin/jq
                     chmod +x /workspace/bin/jq
 
-                    # --- zstd (compress-program do plugin de cache) ---
-                    # Nem o node:24.21.0-bookworm nem esta imagem trazem o binario `zstd`, e o
-                    # apt esta bloqueado pela saida. O Node 24 tem zstd nativo no zlib, entao
-                    # geramos um substituto que o tar chama como `zstd` / `zstd -d`.
-                    # Single-thread: o zstd do Node com nbWorkers falha com as escritas pequenas do tar.
-                    cat > /workspace/bin/zstd <<'EOF'
-                    #!/usr/bin/env node
-                    const { createZstdCompress, createZstdDecompress, constants } = require('zlib');
-                    const { pipeline } = require('stream');
-                    const decompress = process.argv.slice(2).includes('-d');
-                    const stream = decompress
-                      ? createZstdDecompress()
-                      : createZstdCompress({
-                          params: { [constants.ZSTD_c_compressionLevel]: Number(process.env.ZSTD_CLEVEL || 3) },
-                        });
-                    pipeline(process.stdin, stream, process.stdout, (err) => {
-                      if (err) {
-                        console.error('zstd: ' + err.message);
-                        process.exit(1);
-                      }
-                    });
-                    EOF
-                    chmod +x /workspace/bin/zstd
-
                     /workspace/bin/aws --version
                     /workspace/bin/jq --version
                 volumeMounts:
@@ -103,12 +79,13 @@ steps:
           backend: s3
           s3:
             save-cache: false
-          compress: true
-          compress-program: zstd
-          # v2: os tarballs v1 nao sao zstd; um restore-key `v1-` tentaria descomprimi-los.
-          key: "v2-cache-{{ checksum 'pnpm-lock.yaml' }}"
+          # gzip nativo nivel 1 (`gzip -1`): o zstd via Node descomprimia ~6x mais
+          # devagar no pod que o tar cru. O gzip ja vem na imagem e extrai com `tar -xzf`.
+          compress: 1
+          # v3: os tarballs v2 sao zstd; um restore-key `v2-` tentaria extrai-los com gzip.
+          key: "v3-cache-{{ checksum 'pnpm-lock.yaml' }}"
           restore-keys:
-            - "v2-cache-"
+            - "v3-cache-"
           paths:
             - node_modules
             - .pnpm-store
