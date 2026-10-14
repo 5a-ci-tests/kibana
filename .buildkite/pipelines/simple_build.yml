@@ -21,14 +21,32 @@ steps:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
     plugins:
       - kubernetes:
-          # Clone raso: o historico do Kibana tem varios GB e o build so precisa
-          # do commit atual. O fetch tambem precisa de --depth, senao o agent
-          # aprofunda o clone ao buscar o commit do build.
           checkout:
-            cloneFlags: --depth=1 --single-branch --no-tags
-            fetchFlags: --depth=1 --no-tags
-            depth: 1
+            # O checkout usa `git clone --reference` contra o mirror do no, entao
+            # os objetos vem do disco local. Sem --depth: clone raso nao aproveita
+            # os objetos do mirror e voltaria a baixar a arvore inteira do GitHub.
+            cloneFlags: -v --single-branch --no-tags
+            fetchFlags: -v --no-tags
+            gitMirrors:
+              path: /buildkite/git-mirrors
+              # Mirror no disco do proprio no: persiste entre pods do mesmo no e e
+              # recriado do zero quando o no SPOT e substituido.
+              volume:
+                name: git-mirrors
+                hostPath:
+                  path: /var/lib/buildkite/git-mirrors
+                  type: DirectoryOrCreate
+              # O primeiro `git clone --mirror` do Kibana em um no novo leva varios
+              # minutos; outros jobs no mesmo no esperam esse lock.
+              lockTimeout: 1800
           podSpecPatch:
+            nodeSelector:
+              node-group: buildkite
+            tolerations:
+              - key: node-group
+                operator: Equal
+                value: buildkite
+                effect: NoSchedule
             initContainers:
               # Os hooks de plugin rodam no container do comando (node:24.21.0-bookworm),
               # nao em sidecar. Entao `aws` e `jq` precisam chegar no PATH dele.
@@ -66,10 +84,11 @@ steps:
                 volumeMounts:
                   - name: workspace
                     mountPath: /kbn
+                  - name: git-mirrors
+                    mountPath: /buildkite/git-mirrors
                 env:
                   - name: PATH
                     value: "/workspace/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-                  # o node:24.21.0-bookworm nao tem `less`; sem isso o aws v2 erra ao paginar
                   - name: AWS_PAGER
                     value: ""
                   - name: AWS_CONFIG_FILE
