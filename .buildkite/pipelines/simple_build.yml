@@ -9,8 +9,6 @@ steps:
       - node scripts/kbn bootstrap --allow-root
       - node scripts/build_kibana_platform_plugins --dist
     env:
-      # A infra bloqueia saida para ci-stats e cdn.playwright.dev; nenhum dos
-      # dois e necessario para o build.
       CI_STATS_DISABLED: "true"
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
     plugins:
@@ -18,19 +16,31 @@ steps:
           checkout:
             cloneFlags: -v --single-branch --no-tags
             fetchFlags: -v --no-tags
-            # gitMirrors:
-            #   path: /buildkite/git-mirrors
-            #   volume:
-            #     name: git-mirrors
-            #     hostPath:
-            #       path: /var/lib/buildkite/git-mirrors
-            #       type: DirectoryOrCreate
-            #   lockTimeout: 1800
           podSpecPatch:
             containers:
               - name: container-0
                 volumeMounts:
                   - name: workspace
                     mountPath: /kbn
-                  # - name: git-mirrors
-                  #   mountPath: /buildkite/git-mirrors
+      # Sem compressao: o backend `fs` e uma copia local, e gzip/zstd de varios GB
+      # custaria mais que o `cp -a`.
+      # `node_modules` e `.pnpm-store` (storeDir do pnpm-workspace.yaml) andam juntos:
+      # o pnpm valida o node_modules contra o store.
+      - cache#v1.11.1:
+          backend: fs
+          path: node_modules
+          manifest: pnpm-lock.yaml
+          restore: pipeline
+          save:
+            - file
+            - pipeline
+          soft-fail: true
+      - cache#v1.11.1:
+          backend: fs
+          path: .pnpm-store
+          manifest: pnpm-lock.yaml
+          restore: pipeline
+          save:
+            - file
+            - pipeline
+          soft-fail: true
