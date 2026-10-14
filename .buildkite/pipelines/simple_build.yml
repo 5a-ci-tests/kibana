@@ -26,9 +26,9 @@ steps:
       - nienbo/cache#v2.4.21:
           id: node-modules
           backend: tarball
-          key: "v1-{{ id }}-{{ checksum 'pnpm-lock.yaml' }}"
+          key: "v2-{{ id }}-{{ checksum 'pnpm-lock.yaml' }}"
           restore-keys:
-            - "v1-{{ id }}-"
+            - "v2-{{ id }}-"
           compress: 1
           tarball:
             path: /var/cache/buildkite
@@ -36,12 +36,6 @@ steps:
           paths:
             - node_modules
             - .pnpm-store
-      - nienbo/cache#v2.4.21:
-        id: build-artifacts
-        backend: tarball
-        compress: 1
-        key: "v1-build-{{ checksum 'pnpm-lock.yaml' }}"
-        paths:
-          - build/
-          - dist/
-          - .turbo/
+            - build/
+            - dist/
+            - .turbo/
