@@ -36,3 +36,12 @@ steps:
           paths:
             - node_modules
             - .pnpm-store
+      - nienbo/cache#v2.4.21:
+        id: build-artifacts
+        backend: tarball
+        compress: 1
+        key: "v1-build-{{ checksum 'pnpm-lock.yaml' }}"
+        paths:
+          - build/
+          - dist/
+          - .turbo/
