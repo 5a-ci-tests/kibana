@@ -18,19 +18,19 @@ steps:
           checkout:
             cloneFlags: -v --single-branch --no-tags
             fetchFlags: -v --no-tags
-            gitMirrors:
-              path: /buildkite/git-mirrors
-              volume:
-                name: git-mirrors
-                hostPath:
-                  path: /var/lib/buildkite/git-mirrors
-                  type: DirectoryOrCreate
-              lockTimeout: 1800
+            # gitMirrors:
+            #   path: /buildkite/git-mirrors
+            #   volume:
+            #     name: git-mirrors
+            #     hostPath:
+            #       path: /var/lib/buildkite/git-mirrors
+            #       type: DirectoryOrCreate
+            #   lockTimeout: 1800
           podSpecPatch:
             containers:
               - name: container-0
                 volumeMounts:
                   - name: workspace
                     mountPath: /kbn
-                  - name: git-mirrors
-                    mountPath: /buildkite/git-mirrors
+                  # - name: git-mirrors
+                  #   mountPath: /buildkite/git-mirrors
