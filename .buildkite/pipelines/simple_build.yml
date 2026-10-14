@@ -16,31 +16,17 @@ steps:
     plugins:
       - kubernetes:
           checkout:
-            # O checkout usa `git clone --reference` contra o mirror do no, entao
-            # os objetos vem do disco local. Sem --depth: clone raso nao aproveita
-            # os objetos do mirror e voltaria a baixar a arvore inteira do GitHub.
             cloneFlags: -v --single-branch --no-tags
             fetchFlags: -v --no-tags
             gitMirrors:
               path: /buildkite/git-mirrors
-              # Mirror no disco do proprio no: persiste entre pods do mesmo no e e
-              # recriado do zero quando o no SPOT e substituido.
               volume:
                 name: git-mirrors
                 hostPath:
                   path: /var/lib/buildkite/git-mirrors
                   type: DirectoryOrCreate
-              # O primeiro `git clone --mirror` do Kibana em um no novo leva varios
-              # minutos; outros jobs no mesmo no esperam esse lock.
               lockTimeout: 1800
           podSpecPatch:
-            nodeSelector:
-              node-group: buildkite
-            tolerations:
-              - key: node-group
-                operator: Equal
-                value: buildkite
-                effect: NoSchedule
             containers:
               - name: container-0
                 volumeMounts:
