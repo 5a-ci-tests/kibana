@@ -3,16 +3,10 @@ steps:
     agents: {queue: kubernetes}
     image: node:24.21.0-bookworm
     command:
-      # Os plugins WASM do moon mapeiam a raiz do workspace para o caminho virtual
-      # `/workspace`. Como o checkout real tambem comeca com `/workspace/`, o moon
-      # confunde caminho real com virtual e nao acha o pnpm-lock.yaml. Rodamos a
-      # partir do mesmo volume montado em `/kbn` para evitar a colisao.
       - cd "/kbn$${BUILDKITE_BUILD_CHECKOUT_PATH#/workspace}"
       - corepack enable
       - corepack prepare pnpm@12.4.2 --activate
       - node scripts/kbn bootstrap --allow-root
-      # `node scripts/build` baixa Node, pacotes do Fleet e Chromium de dominios
-      # bloqueados; o optimizer compila os bundles sem downloads externos.
       - node scripts/build_kibana_platform_plugins --dist
     env:
       # A infra bloqueia saida para ci-stats e cdn.playwright.dev; nenhum dos
@@ -47,38 +41,6 @@ steps:
                 operator: Equal
                 value: buildkite
                 effect: NoSchedule
-            initContainers:
-              # Os hooks de plugin rodam no container do comando (node:24.21.0-bookworm),
-              # nao em sidecar. Entao `aws` e `jq` precisam chegar no PATH dele.
-              # A imagem oficial do AWS CLI ja traz os dois — nada e baixado aqui.
-              - name: install-cache-tools
-                image: amazon/aws-cli:2.37.6
-                command: ["/bin/sh", "-c"]
-                args:
-                  - |
-                    set -eu
-                    mkdir -p /workspace/bin /workspace/aws-cli /workspace/lib
-
-                    # Mais paralelismo no `aws s3 cp`: o padrao (10 requisicoes, chunks de
-                    # 8MB) subutiliza a banda para um tarball de varios GB.
-                    printf '%s\n' '[default]' 's3 =' \
-                      '  max_concurrent_requests = 64' \
-                      '  multipart_chunksize = 64MB' \
-                      > /workspace/aws-config
-                    cp -a /usr/local/aws-cli/v2/current/. /workspace/aws-cli/
-                    ln -sf /workspace/aws-cli/bin/aws /workspace/bin/aws
-                    cp -a /usr/bin/jq /workspace/lib/jq.bin
-                    cp -a /usr/lib64/libjq.so.1* /usr/lib64/libonig.so.5* /workspace/lib/
-                    printf '%s\n' '#!/bin/sh' \
-                      'exec env LD_LIBRARY_PATH=/workspace/lib /workspace/lib/jq.bin "$$@"' \
-                      > /workspace/bin/jq
-                    chmod +x /workspace/bin/jq
-
-                    /workspace/bin/aws --version
-                    /workspace/bin/jq --version
-                volumeMounts:
-                  - name: workspace
-                    mountPath: /workspace
             containers:
               - name: container-0
                 volumeMounts:
@@ -86,25 +48,3 @@ steps:
                     mountPath: /kbn
                   - name: git-mirrors
                     mountPath: /buildkite/git-mirrors
-                env:
-                  - name: PATH
-                    value: "/workspace/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-                  - name: AWS_PAGER
-                    value: ""
-                  - name: AWS_CONFIG_FILE
-                    value: /workspace/aws-config
-      - nienbo/cache#v2.4.21:
-          id: node-modules
-          backend: s3
-          s3:
-            save-cache: false
-          # gzip nativo nivel 1 (`gzip -1`): o zstd via Node descomprimia ~6x mais
-          # devagar no pod que o tar cru. O gzip ja vem na imagem e extrai com `tar -xzf`.
-          compress: 1
-          # v3: os tarballs v2 sao zstd; um restore-key `v2-` tentaria extrai-los com gzip.
-          key: "v3-cache-{{ checksum 'pnpm-lock.yaml' }}"
-          restore-keys:
-            - "v3-cache-"
-          paths:
-            - node_modules
-            - .pnpm-store
