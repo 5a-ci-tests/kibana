@@ -11,6 +11,7 @@ steps:
     env:
       CI_STATS_DISABLED: "true"
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      BK_CACHE_COMPRESS_PROGRAM: gzip
     plugins:
       - kubernetes:
           checkout:
@@ -22,25 +23,16 @@ steps:
                 volumeMounts:
                   - name: workspace
                     mountPath: /kbn
-      # Sem compressao: o backend `fs` e uma copia local, e gzip/zstd de varios GB
-      # custaria mais que o `cp -a`.
-      # `node_modules` e `.pnpm-store` (storeDir do pnpm-workspace.yaml) andam juntos:
-      # o pnpm valida o node_modules contra o store.
-      - cache#v1.11.1:
-          backend: fs
-          path: node_modules
-          manifest: pnpm-lock.yaml
-          restore: pipeline
-          save:
-            - file
-            - pipeline
-          soft-fail: true
-      - cache#v1.11.1:
-          backend: fs
-          path: .pnpm-store
-          manifest: pnpm-lock.yaml
-          restore: pipeline
-          save:
-            - file
-            - pipeline
-          soft-fail: true
+      - nienbo/cache#v2.4.21:
+          id: node-modules
+          backend: tarball
+          key: "v1-{{ id }}-{{ checksum 'pnpm-lock.yaml' }}"
+          restore-keys:
+            - "v1-{{ id }}-"
+          compress: 1
+          tarball:
+            path: /var/cache/buildkite
+            max: 7
+          paths:
+            - node_modules
+            - .pnpm-store
